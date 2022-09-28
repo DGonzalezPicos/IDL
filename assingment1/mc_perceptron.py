@@ -11,7 +11,7 @@ class MultiClassPerceptron(object):
         ### DEFAULT VALUES
         default_settings = {
             "learning_rate": 1e-1,
-            "epochs": 200,
+            "epochs": 50,
             "weight_scale": 1e-2
         }
         if isinstance(settings, dict):
@@ -39,7 +39,13 @@ class MultiClassPerceptron(object):
                 self.__truth[y_train] = 1.
 
                 y_predicted = self.__predict(x)
+
                 error = self.__truth - y_predicted
+                #
+                # print("---------------------")
+                # print(np.argmax(y_predicted), y_predicted)
+                # print(np.argmax(self.__truth), self.__truth)
+                # print(error)
 
                 update = self.learning_rate * error
 
@@ -62,7 +68,7 @@ class MultiClassPerceptron(object):
             y = self.__predict(x)
             predictions[i] = np.argmax(y)
 
-        return predictions
+        return predictions.flatten()
 
 
     def __step_func(self, x):
@@ -86,7 +92,7 @@ class MultiClassPerceptron(object):
     @staticmethod
     def accuracy(y_true, y_pred=None):
         if y_pred is not None:
-            return np.mean(y_true == y_pred)
+            return np.mean(y_true.flatten() == y_pred.flatten())
         else:
             raise NotImplementedError
 
@@ -110,9 +116,10 @@ def train_mc_perceptron():
     df_out = pd.read_csv('test_out.csv', header=None)
     test_out = df_out.to_numpy()
 
+    predictions = percy.predict(train_in)
+    print(f"Accuracy train: {percy.accuracy(train_out, predictions)}")
     predictions = percy.predict(test_in)
-
-    print(f"Accuracy: {percy.accuracy(test_out, predictions)}")
+    print(f"Accuracy test: {percy.accuracy(test_out, predictions)}")
 
 
 if __name__ == '__main__':
