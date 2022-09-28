@@ -1,0 +1,17 @@
+name: idl
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - matplotlib
+  - pandas
+  - python=3.9
+  - scipy
+  - pathlib
+  - tensorflow
+  - numpy
+  - tqdm
+  - h5py
+  - cupy
+  - scikit-learn
+prefix: C:\Users\lukas\anaconda3\envs\idl
