@@ -10,8 +10,8 @@ class MultiClassPerceptron(object):
 
         ### DEFAULT VALUES
         default_settings = {
-            "learning_rate": 1e-2,
-            "epochs": 100,
+            "learning_rate": 1e-1,
+            "epochs": 200,
             "weight_scale": 1e-2
         }
         if isinstance(settings, dict):
@@ -26,14 +26,12 @@ class MultiClassPerceptron(object):
         ### MAIN MCP
         # TODO: randomly initialize via rng
         self.weights = self.rng.uniform(-1, 1, size=(257, 10)) * self.settings["weight_scale"]
-        self.bias = np.zeros(shape=(257, 10))
+        self.bias = np.zeros(shape=10)
         self.__truth = np.zeros(10)
         self.activation_func = self.__argmax  # self.__step_func
 
 
     def fit(self, X, y):
-        n_samples, n_features = X.shape
-
         _X = self.__append_bias(X)
 
         for __ in tqdm(np.arange(self.epochs)):
@@ -45,7 +43,7 @@ class MultiClassPerceptron(object):
 
                 update = self.learning_rate * error
 
-                self.weights += np.outer(x, update) * self.__sigmoid_prime(np.dot(x, self.weights))
+                self.weights += np.outer(x, update) * self.__sigmoid_prime(y_predicted)
                 self.bias += update
 
                 self.__truth[y_train] = 0.
@@ -53,7 +51,7 @@ class MultiClassPerceptron(object):
 
 
     def __predict(self, x):
-        lin_out = np.dot(x, self.weights)  # X @ self.weights.T + self.bias
+        lin_out = np.dot(x, self.weights) + self.bias  # X @ self.weights.T + self.bias
         y_predicted = self.__sigmoid(lin_out)
         return y_predicted
 
