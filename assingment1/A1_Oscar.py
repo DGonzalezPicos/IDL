@@ -2,7 +2,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-path='C:/Users/osneb/OneDrive/Desktop/Universidad/Master/Introduction to Deep Learning/A1-1'
+# path='C:/Users/osneb/OneDrive/Desktop/Universidad/Master/Introduction to Deep Learning/A1-1'
+path = ''
 
 #1
 
@@ -10,10 +11,10 @@ path='C:/Users/osneb/OneDrive/Desktop/Universidad/Master/Introduction to Deep Le
 
 #Read test datasets
 
-df_in=pd.read_csv(path+'/train_in.csv',header=None)
+df_in=pd.read_csv(path+'train_in.csv',header=None)
 train_in=df_in.to_numpy()
 
-df_out=pd.read_csv(path+'/train_out.csv',header=None)
+df_out=pd.read_csv(path+'train_out.csv',header=None)
 train_out=df_out.to_numpy()
 
 def show_data(data,index):
@@ -36,10 +37,10 @@ centers=[data[n].mean(axis=0) for n in range(10)]
 
 
 #Read test datasets
-df_in=pd.read_csv(path+'/test_in.csv',header=None)
+df_in=pd.read_csv(path+'test_in.csv',header=None)
 test_in=df_in.to_numpy()
 
-df_out=pd.read_csv(path+'/test_out.csv',header=None)
+df_out=pd.read_csv(path+'test_out.csv',header=None)
 test_out=df_out.to_numpy()
 
 #Euclidean n-dimensional distance
