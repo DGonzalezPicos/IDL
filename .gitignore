@@ -270,7 +270,7 @@ fabric.properties
 *.bz2
 *.npz
 *.h5
-# *.pdf # keep papers for laptop
+*.pdf # keep papers for laptop
 *.csv
 *.7z
 *.zip
@@ -278,5 +278,6 @@ fabric.properties
 # idea
 *.idea
 *.epub
-
+lectures
+material
 # old projcts
