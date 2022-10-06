@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 from tqdm import tqdm
 
 
@@ -37,7 +38,7 @@ class MultiClassPerceptron(object):
         # just the tip from the assignment sheet
         _X = self.__append_bias(X)
 
-        for __ in tqdm(np.arange(self.epochs), leave=False):
+        for __ in np.arange(self.epochs):
             for x, y_train in zip(_X, y):
                 # hacky solution
                 self.__truth[y_train] = 1.
@@ -109,7 +110,7 @@ def train_mc_perceptron():
     print(f"Accuracy test: {percy.accuracy(test_out, predictions):.3f}")
 
 
-def experiment(n_samples=50):
+def experiment(n_samples=50, verbose=True):
     accuracies = np.zeros(n_samples)
 
     train_in, train_out, test_in, test_out = get_data()
@@ -121,7 +122,64 @@ def experiment(n_samples=50):
         predictions = percy.predict(test_in)
         accuracies[i] = percy.accuracy(test_out, predictions)
 
-    print(f"Accuracy (n={n_samples}): {np.median(accuracies):.3f} +/- {np.std(accuracies):.5f} (1 SD)")
+    if verbose:
+        print(f"Accuracy (n={n_samples}):\n"
+              f"\tMedian: {np.median(accuracies):.3f}, \n"
+              f"\tMean: {np.mean(accuracies):.3f} +/- {np.std(accuracies):.5f} (1 SD)")
+    return accuracies
+
+def survey(n_grid=10, n_samples=25):
+    # TODO: this ofc takes ages, probably worth to parallelize or vectorize to run on GPU, cupy
+    train_in, train_out, test_in, test_out = get_data()
+
+    # gridsearch
+    l = np.geomspace(1e-6, 1e-1, n_grid)
+    e = np.geomspace(10, 1000, n_grid)
+    ll, ee = np.meshgrid(l, e)
+
+    # this one is fully overwritten every data point, so it can just be initialized here
+    accuracies = np.zeros(n_samples)
+
+    mean_accuracy = np.zeros(ll.size)
+    std_accuracy = np.zeros(ll.size)
+
+    for i, (lr, n_epochs) in tqdm(enumerate(zip(ll.flatten(), ee.flatten())), leave=False):
+        settings = {
+            "learning_rate": lr,
+            "epochs": n_epochs
+        }
+
+        for j in tqdm(range(n_samples), leave=False):
+            percy = MultiClassPerceptron(settings=settings)
+            percy.fit(train_in, train_out)
+
+            predictions = percy.predict(test_in)
+            accuracies[j] = percy.accuracy(test_out, predictions)
+
+        accuracy = experiment(n_samples=n_samples, verbose=False)
+        mean_accuracy[i] = np.mean(accuracy)
+        std_accuracy[i] = np.std(accuracy)
+
+    df_mean = pd.DataFrame(data=mean_accuracy.reshape(ll.shape), columns=l, index=e)
+    df_mean.to_csv("mc_perceptron_mean_accuracy.csv")
+    df_std = pd.DataFrame(data=mean_accuracy.reshape(ll.shape), columns=l, index=e)
+    df_std.to_csv("mc_perceptron_std_accuracy.csv")
+
+    plot_results()
+
+def plot_results():
+    df_mean = pd.read_csv("mc_perceptron_mean_accuracy.csv")
+
+    lr = df_mean.columns
+    epochs = df_mean.index
+
+    data = df_mean.to_numpy()
+
+    import matplotlib.pyplot as plt
+
+    plt.contourf(lr, epochs, data, cmap='RdGy')
+    plt.colorbar()
+    plt.show()
 
 
 def get_data():
@@ -143,4 +201,5 @@ def get_data():
 
 
 if __name__ == '__main__':
-    experiment()
+    # __ = experiment()
+    survey(n_grid=5, n_samples=2)
