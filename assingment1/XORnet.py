@@ -11,9 +11,9 @@ class XorNet(object):
 
         ### DEFAULT VALUES
         default_settings = {
-            "learning_rate": 1e-2,
-            "epochs": 50,
-            "weight_scale": 1e-2
+            "learning_rate": 0.1,
+            "epochs": 50000,
+            "weight_scale": 1
         }
         if isinstance(settings, dict):
             self.settings = {**default_settings, **settings}
@@ -42,16 +42,16 @@ class XorNet(object):
             _weights=weights
         Z=[]
         for n in range(len(_weights)):
-            _X=np.concatenate((np.ones((1,X.shape[1])),X))
+            _X=self.__append_bias(X)
             Z.append(np.dot(_weights[n].T,_X))
-            a = self.activation_func[n](Z[-1])
-            X=a
-        return a, Z
+            y = self.activation_func[n](Z[-1])
+            X=y
+        return y, Z
         
     
     def mse(self,X,y,**kwargs):
         y_predicted,z=self.xor_net(X,**kwargs)
-        err=np.sum(np.sqrt(np.power(y-y_predicted,2)))
+        err=np.sqrt(np.sum(np.power(y-y_predicted,2)))
         return err
 
     def grdmse(self,X,y,**kwargs):        
@@ -71,6 +71,7 @@ class XorNet(object):
         X=np.array([[0,0,1,1],[0,1,0,1]])
         Y=np.array([0,1,1,0])
         err=np.zeros(self.epochs)
+        missclassified=np.zeros(self.epochs)
         for t in np.arange(self.epochs):
             for i in range(len(Y)):
                 x=X[:,[i]]
@@ -79,8 +80,9 @@ class XorNet(object):
                 grad=self.grdmse(x,y)
                 for n in range(len(self.weights)):
                     self.weights[n]-=self.learning_rate*grad[n]
-            err[t]=self.mse(x,y)
-        return err
+            err[t]=self.mse(X,Y)
+            missclassified[t]=np.count_nonzero(self.xor_net(X)[0]!=Y)
+        return err, missclassified
     @staticmethod   
     def __append_bias(X) :
          return np.concatenate((np.ones((1,X.shape[1])),X))
@@ -115,5 +117,11 @@ def get_data():
 if __name__ == '__main__':
     ### input will be [0,1 ; 0,1]
     ### output should be prediction either logits or one hot
-    net=XorNet(); err=net.fit()
-    plt.plot(err)
+    net=XorNet(); err,missclassified=net.fit()
+    
+    fig,ax=plt.subplots()
+    ax2=ax.twinx()
+    ax.plot(err,'r')
+    ax.set_ylabel("Error",c='r')
+    ax2.plot(missclassified,'b')
+    ax2.set_ylabel("Missclassified items",c='b')
