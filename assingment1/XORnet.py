@@ -12,7 +12,7 @@ class XorNet(object):
         ### DEFAULT VALUES
         default_settings = {
             "learning_rate": 0.1,
-            "epochs": 50000,
+            "epochs": 5000,
             "weight_scale": 1
         }
         if isinstance(settings, dict):
@@ -22,6 +22,7 @@ class XorNet(object):
 
         self.learning_rate = self.settings["learning_rate"]
         self.epochs = self.settings["epochs"]
+        self.epochs_needed =np.inf
 
         ### MAIN MCP
         # set initial weights, if they are initialized at w_i!=0 the first evaluation already steps them differently
@@ -81,7 +82,7 @@ class XorNet(object):
                 for n in range(len(self.weights)):
                     self.weights[n]-=self.learning_rate*grad[n]
             err[t]=self.mse(X,Y)
-            missclassified[t]=np.count_nonzero(self.xor_net(X)[0]!=Y)
+            missclassified[t]=np.count_nonzero(np.round(self.xor_net(X)[0])!=Y)
         return err, missclassified
     @staticmethod   
     def __append_bias(X) :
