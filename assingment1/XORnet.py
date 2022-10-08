@@ -11,7 +11,7 @@ class XorNet(object):
 
         ### DEFAULT VALUES
         default_settings = {
-            "learning_rate": 0.1,
+            "learning_rate": 1,
             "epochs": 5000,
             "weight_scale": 1
         }
@@ -22,7 +22,12 @@ class XorNet(object):
 
         self.learning_rate = self.settings["learning_rate"]
         self.epochs = self.settings["epochs"]
-        self.epochs_needed =np.inf
+        
+        #Fit results
+        self.epochs_needed = np.inf
+        self.has_converged = False
+        self.errors=None
+        self.missclassified_items=None
 
         ### MAIN MCP
         # set initial weights, if they are initialized at w_i!=0 the first evaluation already steps them differently
@@ -83,7 +88,29 @@ class XorNet(object):
                     self.weights[n]-=self.learning_rate*grad[n]
             err[t]=self.mse(X,Y)
             missclassified[t]=np.count_nonzero(np.round(self.xor_net(X)[0])!=Y)
-        return err, missclassified
+            
+            if (not self.has_converged) & (missclassified[t]==0):
+                self.has_converged=True
+                self.epochs_needed=t
+        self.errors=err
+        self.missclassified_items=missclassified
+    
+    def plot_fit(self):
+        fig,ax=plt.subplots()
+        
+        if self.has_converged:
+            ax.set_title('Convereged in {} epochs'.format(self.epochs_needed))
+        else:
+            ax.set_title('Did not converge in {} epochs'.format(self.epochs))
+            
+        ax2=ax.twinx()
+        ax.plot(self.errors,'r')
+        ax.set_ylabel("Error",c='r')
+        ax2.plot(self.missclassified_items,'b')
+        ax2.set_ylabel("Missclassified items",c='b')
+        
+        return fig, ax, ax2
+        
     @staticmethod   
     def __append_bias(X) :
          return np.concatenate((np.ones((1,X.shape[1])),X))
@@ -116,13 +143,56 @@ def get_data():
 
 
 if __name__ == '__main__':
-    ### input will be [0,1 ; 0,1]
-    ### output should be prediction either logits or one hot
-    net=XorNet(); err,missclassified=net.fit()
+    #Default network:
+    net=XorNet()
+    net.fit()
+    net.plot_fit()
     
-    fig,ax=plt.subplots()
-    ax2=ax.twinx()
-    ax.plot(err,'r')
-    ax.set_ylabel("Error",c='r')
-    ax2.plot(missclassified,'b')
-    ax2.set_ylabel("Missclassified items",c='b')
+    #Different learing rates 
+    net10=XorNet(settings={'epochs':10000,'learning_rate':10})
+    net10.fit()
+    net10.plot_fit()
+    
+    net01=XorNet(settings={'epochs':10000,'learning_rate':0.1})
+    net01.fit()
+    net01.plot_fit()
+    
+    #Different activation functions
+    tanh=lambda x: np.tanh(x)
+    tanh_prime=lambda x: 1-np.power(np.tanh(x),2)
+    
+    relu=lambda x: np.maximum(0,x)
+    relu_prime=lambda x: np.heaviside(x,1)
+    
+    net_tan=XorNet(settings={'epochs':50000,'learning_rate':0.1}) #NEED LESS L.R.!
+    net_tan.activation_func = [tanh,tanh]
+    net_tan.activation_func_prime = [tanh_prime,tanh_prime]
+    net_tan.fit()
+    net_tan.plot_fit()
+    
+    net_relu=XorNet(settings={'epochs':10000,'learning_rate':0.1}) #NEED LESS L.R.!
+    net_relu.activation_func = [tanh,tanh]
+    net_relu.activation_func_prime = [tanh_prime,tanh_prime]
+    net_relu.fit()
+    net_relu.plot_fit()
+    
+    #Random weights
+    n_experiments=50
+    max_tries=10000
+    
+    tries_needed=np.ones(n_experiments)*np.NAN
+    
+    X=np.array([[0,0,1,1],[0,1,0,1]])
+    Y=np.array([0,1,1,0])
+    #A posteriori, known the order of magintude of the correct weights
+    for n in range(n_experiments):
+        for i in range(max_tries):
+            net=XorNet({"weight_scale": 20})
+            if np.all(np.round(net.xor_net(X)[0])==Y):
+                tries_needed[n]=i+1
+                break
+    print('Random tries average: {:.0f}'.format(np.mean(tries_needed)))
+    print('Random tries deviation: {:.0f}'.format(np.std(tries_needed)/len(tries_needed)))
+            
+            
+            
