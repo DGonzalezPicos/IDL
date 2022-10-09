@@ -7,13 +7,14 @@ class XorNet(object):
                  settings=None, **kwargs):
 
         ### META
-        self.rng = np.random.default_rng()
+        self.rng = np.random.default_rng(**kwargs)
 
         ### DEFAULT VALUES
         default_settings = {
             "learning_rate": 1,
             "epochs": 5000,
-            "weight_scale": 1
+            "weight_scale": 1,
+            "weight_initialization": 'uniform'
         }
         if isinstance(settings, dict):
             self.settings = {**default_settings, **settings}
@@ -34,10 +35,20 @@ class XorNet(object):
         self.weights = self.initialize_weights()
         self.activation_func = [self.__sigmoid,self.__sigmoid]
         self.activation_func_prime = [self.__sigmoid_prime,self.__sigmoid_prime]
+        
     def initialize_weights(self):
+        w_i=self.settings['weight_initialization']
+        if w_i == 'uniform':
+            initializer=lambda s: self.rng.uniform(-1, 1, size=s)
+        elif w_i == 'normal':
+            initializer=lambda s: self.rng.normal(loc=0,scale=1,size=s)
+        elif w_i == 'constant':
+            initializer=lambda s: np.ones(s)
+        else:
+            raise KeyError(w_i)
         _weights=[]
-        _weights.append(self.rng.uniform(-1, 1, size=(3,2)) * self.settings["weight_scale"])
-        _weights.append(self.rng.uniform(-1, 1, size=(3,1)) * self.settings["weight_scale"])
+        _weights.append(initializer((3,2)) * self.settings["weight_scale"])
+        _weights.append(initializer((3,1)) * self.settings["weight_scale"])
         
         return _weights
         
@@ -97,17 +108,20 @@ class XorNet(object):
     
     def plot_fit(self):
         fig,ax=plt.subplots()
+        ax2=ax.twinx()
         
         if self.has_converged:
             ax.set_title('Convereged in {} epochs'.format(self.epochs_needed))
         else:
-            ax.set_title('Did not converge in {} epochs'.format(self.epochs))
-            
-        ax2=ax.twinx()
+            ax.set_title('Did not converge in {} epochs'.format(self.epochs))  
+        
         ax.plot(self.errors,'r')
         ax.set_ylabel("Error",c='r')
+        ax.set_ylim(bottom=0 )
         ax2.plot(self.missclassified_items,'b')
         ax2.set_ylabel("Missclassified items",c='b')
+        ax2.set_yticks([0,1,2,3,4])
+        ax2.set_ylim([-0.2,4.2])
         
         return fig, ax, ax2
         
@@ -144,16 +158,25 @@ def get_data():
 
 if __name__ == '__main__':
     #Default network:
-    net=XorNet()
+    net=XorNet(seed=1)
+    net.fit()
+    net.plot_fit()
+    
+    #Different initialization funcitons
+    net=XorNet({'weight_initialization':'normal'},seed=1)
+    net.fit()
+    net.plot_fit()
+    
+    net=XorNet({'weight_initialization':'constant','epochs':10000},seed=1)
     net.fit()
     net.plot_fit()
     
     #Different learing rates 
-    net10=XorNet(settings={'epochs':10000,'learning_rate':10})
+    net10=XorNet(settings={'epochs':10000,'learning_rate':10},seed=1)
     net10.fit()
     net10.plot_fit()
     
-    net01=XorNet(settings={'epochs':10000,'learning_rate':0.1})
+    net01=XorNet(settings={'epochs':10000,'learning_rate':0.1},seed=1)
     net01.fit()
     net01.plot_fit()
     
@@ -164,13 +187,13 @@ if __name__ == '__main__':
     relu=lambda x: np.maximum(0,x)
     relu_prime=lambda x: np.heaviside(x,1)
     
-    net_tan=XorNet(settings={'epochs':50000,'learning_rate':0.1}) #NEED LESS L.R.!
+    net_tan=XorNet(settings={'epochs':50000,'learning_rate':0.1},seed=1) #NEED LESS L.R.!
     net_tan.activation_func = [tanh,tanh]
     net_tan.activation_func_prime = [tanh_prime,tanh_prime]
     net_tan.fit()
     net_tan.plot_fit()
     
-    net_relu=XorNet(settings={'epochs':10000,'learning_rate':0.1}) #NEED LESS L.R.!
+    net_relu=XorNet(settings={'epochs':10000,'learning_rate':0.1},seed=1) #NEED LESS L.R.!
     net_relu.activation_func = [tanh,tanh]
     net_relu.activation_func_prime = [tanh_prime,tanh_prime]
     net_relu.fit()
@@ -181,6 +204,7 @@ if __name__ == '__main__':
     max_tries=10000
     
     tries_needed=np.ones(n_experiments)*np.NAN
+    errors=np.ones(n_experiments)*np.NAN
     
     X=np.array([[0,0,1,1],[0,1,0,1]])
     Y=np.array([0,1,1,0])
@@ -190,9 +214,12 @@ if __name__ == '__main__':
             net=XorNet({"weight_scale": 20})
             if np.all(np.round(net.xor_net(X)[0])==Y):
                 tries_needed[n]=i+1
+                errors[n]=net.mse(X, Y)
                 break
-    print('Random tries average: {:.0f}'.format(np.mean(tries_needed)))
-    print('Random tries deviation: {:.0f}'.format(np.std(tries_needed)/len(tries_needed)))
-            
+    print('Random tries average: {:.0f}'.format(np.nanmean(tries_needed)))
+    print('MSE average: {:.4f}'.format(np.nanmean(errors)))
+    print('Random tries deviation: {:.0f}'.format(np.nanstd(tries_needed)/len(tries_needed)))
+    print('Times not found in {} tries: {:.0f}%'
+          .format(max_tries,np.count_nonzero(np.isnan(tries_needed))/n_experiments*100))           
             
             
