@@ -43,7 +43,9 @@ class XorNet(object):
         elif w_i == 'normal':
             initializer=lambda s: self.rng.normal(loc=0,scale=1,size=s)
         elif w_i == 'constant':
-            initializer=lambda s: np.ones(s)
+            initializer=lambda s: np.ones(s)  
+        elif w_i == 'glorot':
+            initializer=lambda s: self.rng.normal(loc=0,scale=np.sqrt(2/(s[0]+s[1])),size=s)
         else:
             raise KeyError(w_i)
         _weights=[]
@@ -164,6 +166,10 @@ if __name__ == '__main__':
     
     #Different initialization funcitons
     net=XorNet({'weight_initialization':'normal'},seed=1)
+    net.fit()
+    net.plot_fit()
+    
+    net=XorNet({'weight_initialization':'glorot'},seed=1)
     net.fit()
     net.plot_fit()
     
