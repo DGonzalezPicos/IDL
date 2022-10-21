@@ -230,6 +230,8 @@ def plot_results(n_epochs):
     ax.set_facecolor('black')
     ax.set_title('Average epochs for convergence')
     sns.heatmap(df_mean,annot=True,fmt='g',cmap='Blues')
+    ax.set_xlabel('Learning rate')
+    ax.set_ylabel('Initial weight scale')
     plt.show()
     
     df_std = pd.read_csv("XOR_net_std.csv",index_col=0)
@@ -238,6 +240,8 @@ def plot_results(n_epochs):
     ax.set_facecolor('black')
     ax.set_title('std in convergence epochs')
     sns.heatmap(df_std,annot=True,fmt='g',cmap='Blues')
+    ax.set_xlabel('Learning rate')
+    ax.set_ylabel('Initial weight scale')
     plt.show()
     
     df_nc = pd.read_csv("XOR_net_not_converged.csv",index_col=0)
@@ -245,12 +249,18 @@ def plot_results(n_epochs):
     fig,ax=plt.subplots()
     ax.set_title('Samples ratio not converged in less than '+str(n_epochs)+' epochs')
     sns.heatmap(df_nc,annot=True,fmt='.0%',cbar=False,cmap='Blues')
+    ax.set_xlabel('Learning rate')
+    ax.set_ylabel('Initial weight scale')
+    plt.show()
 
-def XorNet_survey(n_samples=5,description=False,**kwargs):
+def XorNet_survey(n_samples=5,seed=False,description=False,**kwargs):
+    if seed:
+        np.random.seed(seed)
+    seeds=np.random.randint(0,1000*n_samples,size=n_samples)
     epochs = np.zeros(n_samples)
     not_converged = np.zeros(n_samples)
     for i in tqdm(range(n_samples), leave=False):
-        net=XorNet(**kwargs)
+        net=XorNet(seed=seeds[i],**kwargs)
         net.fit(stop_when_converge=True)
 
         epochs[i]=net.epochs_needed
@@ -270,7 +280,7 @@ def XorNet_survey(n_samples=5,description=False,**kwargs):
 if __name__ == '__main__':
     
     #Sample the default network:
-    params_survey(n_grid=3, n_samples=5,max_epochs=500000)  
+    params_survey(n_grid=3, n_samples=6,max_epochs=1000000)  
     
     #Default network:
     net=XorNet(seed=2022)
@@ -278,18 +288,20 @@ if __name__ == '__main__':
     net.plot_fit()
     
     #Different initialization funcitons
-    net=XorNet_survey(n_samples=50,settings={'weight_initialization':'normal'})
+    net=XorNet_survey(n_samples=100,seed=2022)
     
-    net=XorNet_survey(n_samples=50,settings={'weight_initialization':'glorot'})
+    net=XorNet_survey(n_samples=100,settings={'weight_initialization':'normal'},seed=2022)
     
-    net=XorNet_survey(n_samples=50,settings={'weight_initialization':'normal','weight_deviation':10})
+    net=XorNet_survey(n_samples=100,settings={'weight_initialization':'glorot'},seed=2022)
     
-    net=XorNet_survey(n_samples=50,settings={'weight_initialization':'constant','epochs':10000})
+    net=XorNet_survey(n_samples=100,settings={'weight_initialization':'normal','weight_deviation':10},seed=2022)
+    
+    net=XorNet_survey(n_samples=100,settings={'weight_initialization':'constant'},seed=2022)
     
     #Different learing rates 
-    net10=XorNet_survey(n_samples=50,settings={'epochs':10000,'learning_rate':10})
+    net10=XorNet_survey(n_samples=50,settings={'epochs':10000,'learning_rate':10},seed=2022)
     
-    net01=XorNet_survey(n_samples=50,settings={'epochs':10000,'learning_rate':0.1})
+    net01=XorNet_survey(n_samples=50,settings={'epochs':10000,'learning_rate':0.1},seed=2022)
     
     #Different activation functions
     tanh=lambda x: np.tanh(x)
@@ -298,42 +310,58 @@ if __name__ == '__main__':
     relu=lambda x: np.maximum(0,x)
     relu_prime=lambda x: np.heaviside(x,1)
     
+    net=XorNet(a_fun_and_der=([tanh,tanh],[tanh_prime,tanh_prime]),seed=2022)
+    net.fit()
+    net.plot_fit(aditional_title='a.function: tanh(x)')
     
-    net_tanh=XorNet_survey(n_samples=50, description='Tanh activation function',
-                          settings={'epochs':10000,'learning_rate':0.1},
-                          a_fun_and_der=([tanh,tanh],[tanh_prime,tanh_prime]))
+    net=XorNet(settings={'epochs':10000,'learning_rate':0.1},
+                              a_fun_and_der=([relu,relu],[relu_prime,relu_prime]))
+    net.fit()
+    net.plot_fit(aditional_title='a.function: ReLU(x)')
     
-    net_relu=XorNet_survey(n_samples=50, description='ReLU activation function',
+    net_tanh=XorNet_survey(n_samples=100, description='Tanh activation function',
                           settings={'epochs':10000,'learning_rate':0.1},
-                          a_fun_and_der=([relu,relu],[relu_prime,relu_prime]))
+                          a_fun_and_der=([tanh,tanh],[tanh_prime,tanh_prime]),seed=2022)
     
-    net_hybrid=XorNet_survey(n_samples=50, description='ReLU and sigmoid activation functions',
+    net_relu=XorNet_survey(n_samples=100, description='ReLU activation function',
                           settings={'epochs':10000,'learning_rate':0.1},
-                          a_fun_and_der=([relu,sigmoid],[relu_prime,sigmoid_prime]))
-    net_hybrid=XorNet_survey(n_samples=50,description='ReLU and sigmoid activation functions',
+                          a_fun_and_der=([relu,relu],[relu_prime,relu_prime]),seed=2022)
+    
+    net_hybrid=XorNet_survey(n_samples=100, description='ReLU and sigmoid activation functions',
+                          settings={'epochs':10000,'learning_rate':0.1},
+                          a_fun_and_der=([relu,sigmoid],[relu_prime,sigmoid_prime]),seed=2022)
+    net_hybrid=XorNet_survey(n_samples=100,description='ReLU and sigmoid activation functions',
                           settings={'epochs':10000,'learning_rate':1},
-                          a_fun_and_der=([relu,sigmoid],[relu_prime,sigmoid_prime]))
+                          a_fun_and_der=([relu,sigmoid],[relu_prime,sigmoid_prime]),seed=2022)
     #Random weights
-    n_experiments=1000
-    max_tries=10000
-    
-    tries_needed=np.ones(n_experiments)*np.nan
-    errors=np.ones(n_experiments)*np.nan
-    
-    X=np.array([[0,0,1,1],[0,1,0,1]])
-    Y=np.array([0,1,1,0])
-    #A posteriori, known the order of magintude of the correct weights
-    for n in tqdm(range(n_experiments),leave=False):
-        for i in range(max_tries):
-            net=XorNet({"weight_scale": 20})
-            if np.all(np.round(net.xor_net(X)[0])==Y):
-                tries_needed[n]=i+1
-                errors[n]=net.mse(X, Y)
-                break
-    print('Random tries average: {:.0f}'.format(np.nanmean(tries_needed)))
-    print('MSE average: {:.4f}'.format(np.nanmean(errors)))
-    print('Random tries deviation: {:.0f}'.format(np.nanstd(tries_needed)))
-    print('Times not found in {} tries: {:.0f}%'
-          .format(max_tries,np.count_nonzero(np.isnan(tries_needed))/n_experiments*100))           
+    def lazy_approach(n_experiments=100,max_tries=10000,seed=False,title=False,**kwargs):
+        if seed:
+            np.random.seed(2022)
+        seeds=np.random.randint(0,2147483647,size=(n_experiments,max_tries))
+        
+        tries_needed=np.ones(n_experiments)*np.nan
+        errors=np.ones(n_experiments)*np.nan
+        
+        X=np.array([[0,0,1,1],[0,1,0,1]])
+        Y=np.array([0,1,1,0])
+        #A posteriori, known the order of magintude of the correct weights
+        for n in tqdm(range(n_experiments),leave=False):
+            for i in range(max_tries):
+                net=XorNet(seed=seeds[n,i],**kwargs)
+                if np.all(np.round(net.xor_net(X)[0])==Y):
+                    tries_needed[n]=i+1
+                    errors[n]=net.mse(X, Y)
+                    break
+        if title:
+            print(title)
+        print('Random tries average: {:.0f}'.format(np.nanmean(tries_needed)))
+        print('MSE average: {:.4f}'.format(np.nanmean(errors)))
+        print('Random tries deviation: {:.0f}'.format(np.nanstd(tries_needed)))
+        print('Times not found in {} tries: {:.0f}%'
+              .format(max_tries,np.count_nonzero(np.isnan(tries_needed))/n_experiments*100))        
             
-            
+    lazy_approach(n_experiments=50,max_tries=1000000,seed=2022,
+                  title='Results with weight_scale = 1')
+    lazy_approach(n_experiments=1000,max_tries=10000,seed=2022,
+                  settings={"weight_scale": 20},
+                  title='Results with weight_scale = 20')
