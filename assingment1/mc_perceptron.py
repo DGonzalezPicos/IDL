@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
 
 class MultiClassPerceptron(object):
@@ -25,7 +24,7 @@ class MultiClassPerceptron(object):
             self.settings = default_settings
 
         self.learning_rate = self.settings["learning_rate"]
-        self.epochs = self.settings["epochs"]
+        self.epochs = int(self.settings["epochs"])
 
         ### MAIN MCP
         # set initial weights, if they are initialized at w_i!=0 the first evaluation already steps them differently
@@ -110,17 +109,36 @@ def train_mc_perceptron():
     print(f"Accuracy test: {percy.accuracy(test_out, predictions):.3f}")
 
 
-def experiment(n_samples=50, verbose=True):
+def experiment(n_samples=50, verbose=True, settings={}):
     accuracies = np.zeros(n_samples)
 
     train_in, train_out, test_in, test_out = get_data()
 
-    for i in tqdm(range(n_samples), leave=False):
-        percy = MultiClassPerceptron()
+    if verbose:
+        _predictions = np.zeros((n_samples, len(test_out)))
+
+    for i in range(n_samples):
+        percy = MultiClassPerceptron(settings=settings)
         percy.fit(train_in, train_out)
 
         predictions = percy.predict(test_in)
+        if verbose:
+            _predictions[i] = predictions
         accuracies[i] = percy.accuracy(test_out, predictions)
+
+    if verbose:
+        try:
+            from sklearn.metrics import ConfusionMatrixDisplay
+            import matplotlib
+            matplotlib.use('TkAgg')
+            import matplotlib.pyplot as plt
+            ConfusionMatrixDisplay.from_predictions(np.tile(test_out, reps=(n_samples, 1)).flatten(), _predictions.flatten(),
+                                                    normalize="true", include_values=False)
+            plt.title(f"MCP confusion matrix (N={n_samples})")
+            plt.savefig("MCP_CFM.png", dpi=400)
+            plt.show()
+        except ModuleNotFoundError:
+            pass
 
     if verbose:
         print(f"Accuracy (n={n_samples}):\n"
@@ -143,13 +161,13 @@ def survey(n_grid=10, n_samples=25):
     mean_accuracy = np.zeros(ll.size)
     std_accuracy = np.zeros(ll.size)
 
-    for i, (lr, n_epochs) in tqdm(enumerate(zip(ll.flatten(), ee.flatten())), leave=False):
+    for i, (lr, n_epochs) in enumerate(zip(ll.flatten(), ee.flatten())):
         settings = {
             "learning_rate": lr,
             "epochs": n_epochs
         }
 
-        for j in tqdm(range(n_samples), leave=False):
+        for j in range(n_samples):
             percy = MultiClassPerceptron(settings=settings)
             percy.fit(train_in, train_out)
 
@@ -168,17 +186,33 @@ def survey(n_grid=10, n_samples=25):
     plot_results()
 
 def plot_results():
-    df_mean = pd.read_csv("mc_perceptron_mean_accuracy.csv")
+    df_mean = pd.read_csv("mc_perceptron_mean_accuracy.csv", index_col=0, header=0)
 
-    lr = df_mean.columns
-    epochs = df_mean.index
+    lr = df_mean.columns.to_numpy().astype(float)
+    epochs = df_mean.index.to_numpy().astype(float)
 
-    data = df_mean.to_numpy()
+    data = df_mean.to_numpy().astype(float)
 
+    import matplotlib
+    matplotlib.use('TkAgg')
     import matplotlib.pyplot as plt
 
-    plt.contourf(lr, epochs, data, cmap='RdGy')
-    plt.colorbar()
+    fig, ax = plt.subplots(constrained_layout=True)
+
+    cf = ax.contourf(lr, epochs, data, cmap='RdGy')
+    ax.set_xlim(np.min(lr), np.max(lr))
+    ax.set_ylim(np.min(epochs), np.max(epochs))
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+
+    ax.set_xlabel("Learning rate")
+    ax.set_ylabel("Total epochs")
+
+
+    cb = plt.colorbar(cf, label="Mean accuracy (N=5)")
+
+    plt.savefig("MCP_survey.png", dpi=400)
+
     plt.show()
 
 
@@ -199,7 +233,56 @@ def get_data():
 
     return train_in, train_out, test_in, test_out
 
+def opt_MCP(n_samples=1):
+    try:
+        from hyperopt import fmin, tpe, hp, STATUS_OK, STATUS_FAIL, Trials
+
+        trials = Trials()
+
+        space = {
+            "epochs": hp.quniform("epochs", 1,  100, 1),
+            "learning_rate": hp.loguniform("learning_rate", np.log10(1.0e-10), np.log10(0.9)),
+        }
+
+        def objective(vector):
+            settings = {
+                "learning_rate": vector["learning_rate"],
+                "epochs": vector["epochs"]
+            }
+
+            accuracies = experiment(n_samples=n_samples, settings=settings, verbose=False)
+
+            mean_accuracy = np.mean(accuracies)
+
+            return {'loss': 1 - mean_accuracy, 'status': STATUS_OK}
+
+        tpe._default_n_startup_jobs = 25
+
+        with np.errstate(under='ignore'):
+            best_param = fmin(
+                fn=objective,
+                space=space,
+                algo=tpe.suggest,
+                max_evals=100,
+                trials=trials
+            )
+
+        import matplotlib
+        matplotlib.use('TkAgg')
+        from hyperopt.plotting import main_plot_history, main_plot_histogram, main_plot_vars
+
+        main_plot_history(trials)
+        main_plot_histogram(trials)
+        main_plot_vars(trials)
+
+        print(best_param)
+    except ModuleNotFoundError:
+        print("hyperpt module required for hyperparameter optimization")
+        pass
+
 
 if __name__ == '__main__':
-    # __ = experiment()
-    survey(n_grid=5, n_samples=2)
+    # __ = experiment(n_samples=10)
+    # survey(n_grid=10, n_samples=5)
+    # plot_results()
+    opt_MCP()
