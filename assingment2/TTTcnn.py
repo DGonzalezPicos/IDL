@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import cupy as cp
 import tensorflow as tf
-# from tensorflow import keras
+from tensorflow.keras import Model
 from tensorflow.keras.losses import Loss, CosineSimilarity
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, Dropout, Conv2D, MaxPooling2D, Flatten, Input
@@ -10,11 +10,13 @@ from tensorflow.keras.layers.experimental.preprocessing import Rescaling
 from pathlib import Path
 from functools import partial
 
+# tf.config.run_functions_eagerly(False)
+
 global RNG
 RNG = cp.random.default_rng(seed=None)
 
 ### MODELS
-class RegressionCNN(Sequential):
+class RegressionCNN(Model):
     def __init__(self,
                  settings=None,
                  seed=None,
@@ -38,13 +40,38 @@ class RegressionCNN(Sequential):
             Dense(units=2, activation='linear')
         ]
 
-        super().__init__(stack)
+        inputs = tf.keras.Input(shape=(150, 150, 1), name='input')
+        x = Rescaling(1. / 255., input_shape=(150, 150, 1))(inputs)
+        x = Conv2D(64, kernel_size=5, strides=2, activation='leaky_relu')(x)
+        x = MaxPooling2D(pool_size=(2, 2), strides=2)(x)
+        x = Conv2D(64, kernel_size=3, strides=1, activation='leaky_relu')(x)
+        x = MaxPooling2D(pool_size=(2, 2))(x)
+        x = Conv2D(64, kernel_size=3, strides=1, activation='leaky_relu')(x)
+        x = MaxPooling2D(pool_size=(2, 2))(x)
+        x = Conv2D(64, kernel_size=3, strides=1, activation='leaky_relu')(x)
+        x = Dropout(.4)(x)
+        x = Flatten()(x)
 
-        self.compile(optimizer="adam", loss=sincos_loss, metrics=['accuracy'])
+        # Hour branch
+        hour = Dense(256, activation='leaky_relu')(x)
+        hour = Dense(256, activation='leaky_relu')(hour)
+        hour = Dense(1, activation="linear", name='hour')(hour)
+        # hour = tf.keras.activations.relu(x=hour, alpha=0.0, max_value=1.0, threshold=0.0)
+
+        # Minute Branch
+        minute = Dense(256, activation='leaky_relu')(x)
+        minute = Dense(256, activation='leaky_relu')(minute)
+        minute = Dense(1, activation="linear", name='minute')(minute)
+        # minute = tf.keras.activations.relu(x=minute, alpha=0.0, max_value=1.0, threshold=0.0)
+
+        super().__init__(inputs=inputs, outputs=minute)
+
+        self.compile(optimizer="adam", loss=sincos_loss) #, metrics=['accuracy'])
+        # self.compile(optimizer="adam", loss=['mse', 'mse']) #, metrics=['mse', 'mae'])  # , metrics=['accuracy'])
 
         self.summary()
 
-    def train(self, x, y, epochs=500, batchsize=128):
+    def train(self, x, y, epochs=10, batchsize=128):
         self.fit(x, y,
                  epochs=epochs, batch_size=batchsize,
                  ) #validation_data=(dataset.x_valid, dataset.y_valid),)
@@ -92,30 +119,43 @@ class TellTheTimeCNN(object):
 
 ### LOSSES
 # cosine similarity loss
-cosine_similarity = CosineSimilarity(axis=-1)
+cosine_similarity = CosineSimilarity(axis=1)
+mse = tf.keras.losses.MeanSquaredError()
+mae = tf.keras.losses.MeanAbsoluteError()
+
 def encode_sin_cos(y):
-    return [
-        [tf.math.sin(2 * np.pi * y[:, 0]), tf.math.cos(2 * np.pi * y[:, 0])],
-        [tf.math.sin(2 * np.pi * y[:, 1]), tf.math.cos(2 * np.pi * y[:, 1])],
-    ]
+    return [tf.math.sin(2 * np.pi * y), tf.math.cos(2 * np.pi * y)]
+
+def encode_sin(y):
+    return tf.math.sin(2 * np.pi * y)
+
+def encode_cos(y):
+    return tf.math.cos(2 * np.pi * y)
 
 def sincos_loss(yhat, y):
-    y_encoded = encode_sin_cos(y)
-    yhat_encoded = encode_sin_cos(yhat)
-    return cosine_similarity(y_encoded, yhat_encoded)
+    # y_encoded = encode_sin_cos(y)
+    # yhat_encoded = encode_sin_cos(yhat)
 
-def new_sincos_loss(yhat, y, which=[0, 1], weights=[1., 1.]):
-    loss = 0.
-    for dim, weight in zip(which, weights):
-        y_encoded = tf.map_fn(encode_sin_cos, y[:, dim], dtype=[tf.float32, tf.float32])
-        yhat_encoded = tf.map_fn(encode_sin_cos, yhat[:, dim], dtype=[tf.float32, tf.float32])
-        loss += weight * cosine_similarity(y_encoded, yhat_encoded) / sum(weights)
+    y_encoded_sin = encode_sin(y)
+    yhat_encoded_sin = encode_sin(yhat)
 
+    y_encoded_cos = encode_cos(y)
+    yhat_encoded_cos = encode_cos(yhat)
+
+    sin_loss = mse(yhat_encoded_sin, y_encoded_sin)
+    cos_loss = mse(yhat_encoded_cos, y_encoded_cos)
+
+    loss = tf.math.sqrt(tf.square(sin_loss) + tf.square(cos_loss))
+
+    # print(yhat_encoded.shape)
+    # loss = mae(yhat_encoded, y_encoded)
+    # loss = cosine_similarity(2 * np.pi * y, 2 * np.pi * yhat)
+    # loss = 1 - tf.math.sqrt()
     return loss
 
 # decimal loss
-def encode_decimal(y): #stupid
-    return y[:, 0] * 12 + y[:, 1]
+def encode_decimal(y):
+    return 1/12.0 * (y[:, 0] + y[:, 1] / 60.0)
 
 
 ### UTILS
@@ -139,6 +179,8 @@ def decode_time(y):
     y[:, 1] *= 60.
     return y
 
+def split_y(y):
+    return [y[:, 0], y[:, 1]]
 
 def read_data(path="./a2_data"):
     # converts to f32
@@ -189,35 +231,13 @@ def get_data(path="./a2_data", test_fraction=0.2):
     return x_train, y_train, x_test, y_test
 
 if __name__ == '__main__':
-    # y = tf.convert_to_tensor([
-    #     [0.001, 0.95],
-    #     [0.002, 0.96],
-    #     [0.003, 0.97],
-    #     [0.004, 0.98],
-    #     [0.005, 0.99]
-    # ], dtype=tf.float32)
-    #
-    # y_hat = tf.convert_to_tensor([
-    #     [0.0011, 0.955],
-    #     [0.0022, 0.966],
-    #     [0.0033, 0.977],
-    #     [0.0044, 0.988],
-    #     [0.0055, 0.999]
-    # ], dtype=tf.float32)[:,::-1]
-    #
-    # # y_hat = tf.convert_to_tensor([
-    # #     [0.1, 0.5],
-    # #     [0.2, 0.6],
-    # #     [0.3, 0.7],
-    # #     [0.4, 0.8],
-    # #     [0.5, 0.9]
-    # # ], dtype=tf.float32)
-    #
-    # print(y)
-    # print(y_hat)
-    # print(sincos_loss(y_hat, y))
-
     x_train, y_train, x_test, y_test = get_data()
+    # y_train, y_test = encode_time(y_train), encode_time(y_test)
+    y_train, y_test = encode_decimal(y_train), encode_decimal(y_test)
+
+    # raise NotImplementedError
+
+
     model = RegressionCNN()
     model.train(x_train, y_train)
     model.test(x_test, y_test)
