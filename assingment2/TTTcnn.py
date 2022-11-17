@@ -3,7 +3,8 @@ import tensorflow as tf
 from tensorflow.keras import Model
 from tensorflow.keras.losses import Loss, CosineSimilarity
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Dropout, Conv2D, MaxPooling2D, Flatten, Input, SpatialDropout2D, LocallyConnected2D, LayerNormalization, BatchNormalization
+from tensorflow.keras.layers import Dense, Dropout, Conv2D, MaxPooling2D, Flatten, Input, SpatialDropout2D, \
+    LocallyConnected2D, LayerNormalization, BatchNormalization
 from tensorflow.keras.layers.experimental import EinsumDense
 from tensorflow.keras.layers.experimental.preprocessing import Rescaling
 from pathlib import Path
@@ -20,6 +21,7 @@ class TellTheTimeCNN(Model):
     """
     Class for enslaving silicon to read analog watches.
     """
+
     def __init__(self,
                  settings=None,
                  seed=None,
@@ -62,22 +64,39 @@ class TellTheTimeCNN(Model):
         self.loss = self.settings["loss"]
 
         ### CNN
-        KernelConv = partial(Conv2D, activation='leaky_relu', padding="VALID")
-        LocalKernelConv = partial(LocallyConnected2D, activation='leaky_relu', padding="VALID")
-        HalvingDropout = Dropout(.4)
-        SpatialDroput = SpatialDropout2D(0.4)
+        # KernelConv = partial(Conv2D, activation='leaky_relu', kernel_initializer="he_normal", padding="VALID")
+        # LocalKernelConv = partial(LocallyConnected2D, activation='leaky_relu', padding="VALID")
+        # HalvingDropout = Dropout(.4)
+        # SpatialDroput = SpatialDropout2D(0.4)
 
         inputs = Input(shape=(150, 150, 1), name='input')
         main_stack = [
             Rescaling(1. / 255., input_shape=(150, 150, 1)),
-            KernelConv(filters=64, kernel_size=5, strides=2),
-            MaxPooling2D(pool_size=2, strides=2),
-            KernelConv(filters=64, kernel_size=3, strides=1),
+            # KernelConv(filters=16, kernel_size=5),
+            # MaxPooling2D(pool_size=2),
+            # KernelConv(filters=32, kernel_size=3),
+            # KernelConv(filters=32, kernel_size=3),
+            # MaxPooling2D(pool_size=2),
+            # KernelConv(filters=64, kernel_size=3),
+            # KernelConv(filters=64, kernel_size=3),
+            # MaxPooling2D(pool_size=2),
+            Conv2D(filters=64, kernel_size=3, strides=1,
+                   activation='leaky_relu', kernel_initializer="he_normal", padding="VALID"),
+            BatchNormalization(axis=1),
+            MaxPooling2D(pool_size=2, strides=1),
+            # Dense(256, activation='leaky_relu', kernel_initializer='he_normal'),
+            Conv2D(filters=64, kernel_size=3, strides=1,
+                   activation='leaky_relu', kernel_initializer="he_normal", padding="VALID"),
+            BatchNormalization(axis=1),
             MaxPooling2D(pool_size=2),
-            KernelConv(filters=64, kernel_size=3, strides=1),
+            Conv2D(filters=64, kernel_size=3, strides=1,
+                   activation='leaky_relu', kernel_initializer="he_normal", padding="VALID"),
+            BatchNormalization(axis=1),
             MaxPooling2D(pool_size=2),
-            KernelConv(filters=64, kernel_size=3, strides=1),
-            HalvingDropout,
+            Conv2D(filters=64, kernel_size=3, strides=1,
+                   activation='leaky_relu', kernel_initializer="he_normal", padding="VALID"),
+            BatchNormalization(axis=1),
+            # HalvingDropout,
             Flatten(),
         ]
         x = inputs
@@ -95,16 +114,16 @@ class TellTheTimeCNN(Model):
 
         # build model
         super().__init__(inputs=inputs, outputs=outputs)
-        self.compile(optimizer="adam", loss=losses) # "mse") #
+        self.compile(optimizer="adam", loss="mse") #losses)  #
         self.summary()
-
 
     def build_regression_head(self, _x, name="reg_output"):
         regression_stack = [
-            Dense(256, activation='elu'),
-            Dense(256, activation='elu'),
-            # Dense(1, activation="linear"),
+            Dense(256, activation='leaky_relu', kernel_initializer='he_normal'),
+            Dense(256, activation='leaky_relu', kernel_initializer='he_normal'),
+            # Dense(256, activation="linear"),
             # LayerNormalization(),
+            # Dense(1, activation="linear", name=name)
             Dense(1, activation="tanh", name=name)
         ]
         for layer in regression_stack:
@@ -148,7 +167,7 @@ class TellTheTimeCNN(Model):
         return y
 
     @staticmethod
-    def encode_decimal(y, norm=1./12.):
+    def encode_decimal(y, norm=1. / 12.):
         return y * norm
 
     @staticmethod
@@ -157,7 +176,7 @@ class TellTheTimeCNN(Model):
 
     # DECODINGS
     @staticmethod
-    def decode_decimal(y, norm=1./12.):
+    def decode_decimal(y, norm=1. / 12.):
         return y / norm
 
     @staticmethod
@@ -168,7 +187,7 @@ class TellTheTimeCNN(Model):
         :return:
         """
         r = y % 1
-        return [(y-r) * 12., r * 60.]
+        return [(y - r) * 12., r * 60.]
 
     @staticmethod
     def mse_sincos_loss(y, yhat):
@@ -186,8 +205,11 @@ class TellTheTimeCNN(Model):
         y_encoded_cos = tf.math.cos(2 * np.pi * y)
         yhat_encoded_cos = tf.math.cos(2 * np.pi * yhat)
 
-        sin_loss = mae(y_encoded_sin, yhat_encoded_sin)
-        cos_loss = mae(y_encoded_cos, yhat_encoded_cos)
+        # sin_loss = mae(y_encoded_sin, yhat_encoded_sin)
+        # cos_loss = mae(y_encoded_cos, yhat_encoded_cos)
+
+        sin_loss = tf.math.square(y_encoded_sin - yhat_encoded_sin)
+        cos_loss = tf.math.square(y_encoded_cos - yhat_encoded_cos)
 
         loss = tf.sqrt(tf.square(sin_loss) + tf.square(cos_loss))
         return loss
@@ -198,17 +220,19 @@ class TellTheTimeCNN(Model):
         else:
             return self.encoding_fn(y)
 
-    def train(self, x, y, epochs=1, batchsize=128, validation_data=None, validation_freq=None):
+    def train(self, x, y, epochs=4, batchsize=128, shuffle=True, validation_data=None, validation_freq=None):
         if validation_data is None and validation_freq is not None:
             validation_freq = int(0.2 * epochs)
 
         history = self.fit(x, y,
                            epochs=epochs, batch_size=batchsize,
-                           validation_data=validation_data, validation_freq=validation_freq)
+                           validation_data=validation_data, validation_freq=validation_freq,
+                           shuffle=shuffle,)
 
     def test(self, x, y):
         eval = self.evaluate(x, y, verbose=1, return_dict=True)
         print(eval)
+
 
 ### UTILS
 def read_data(path="./a2_data"):
@@ -219,11 +243,12 @@ def read_data(path="./a2_data"):
     labels = np.load(path / "labels.npy")
     return tf.convert_to_tensor(images, dtype=tf.float32), tf.convert_to_tensor(labels, dtype=tf.float32)
 
+
 def prepare_data(x, y, test_fraction=0.2):
     # y = encode_time(y)
 
     n_samples = len(y)
-    n_train = int(n_samples * (1-test_fraction))
+    n_train = int(n_samples * (1 - test_fraction))
 
     idxs = tf.range(n_samples)
     idxs = tf.random.shuffle(idxs)
@@ -239,8 +264,8 @@ def prepare_data(x, y, test_fraction=0.2):
 
     return x_train, y_train, x_test, y_test
 
-def get_data(path="./a2_data", test_fraction=0.2):
 
+def get_data(path="./a2_data", test_fraction=0.2):
     images, labels = read_data(path=path)
 
     x_train, y_train, x_test, y_test = prepare_data(images, labels, test_fraction=test_fraction)
@@ -253,13 +278,16 @@ def get_data(path="./a2_data", test_fraction=0.2):
 
     return x_train, y_train, x_test, y_test
 
+
 if __name__ == '__main__':
     print("No longer supported, use the supplied jupyter notebook.")
     x_train, base_y_train, x_test, base_y_test = get_data()
     default_model = TellTheTimeCNN()
     y_train, y_test = default_model.encode_y(base_y_train, base_y_test)
     print("Encoding from hh,mm -> f: ", base_y_train.shape, " -> ", y_train.shape)
+    print(base_y_train[:5])
     print(y_train[:5])
+    print(base_y_test[:5])
     print(y_test[:5])
 
     # yhat, y = np.linspace(-1, 1., 200), np.linspace(-1, 1., 200)
@@ -294,7 +322,8 @@ if __name__ == '__main__':
     #
     # plt.matshow(loss.reshape(200, 200))
     # plt.show()
-
+    #
+    # raise NotImplementedError
 
     print(default_model.predict(x_test[:5]))
 
