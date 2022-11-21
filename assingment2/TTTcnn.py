@@ -207,6 +207,20 @@ class TellTheTimeCNN(Model):
         linear *= n_classes
         return tf.round(linear)
 
+    @staticmethod
+    def encode_classes(y, n_classes):
+        """
+        Class encoding using bankers rounding. Encodes from hh:mm to linear [0, 1) and then to classes
+        with labels 0, 1... n_classes - 1 with "increasing" time.
+        This means this can also be used for regression or with the sin-cos losses etc.
+        :param y:
+        :param n_classes:
+        :return:
+        """
+        linear = y / tf.math.reduce_max(y)
+        linear *= n_classes
+        return tf.round(linear)
+
     # DECODINGS
     @staticmethod
     def decode_decimal(y, norm=1. / 12.):
