@@ -9,6 +9,7 @@ from tensorflow.keras.layers.experimental import EinsumDense
 from tensorflow.keras.layers.experimental.preprocessing import Rescaling
 from pathlib import Path
 from functools import partial
+from CNN_stacks import *
 
 cosine_similarity = CosineSimilarity(axis=1)
 mse = tf.keras.losses.MeanSquaredError()
@@ -33,7 +34,8 @@ class TellTheTimeCNN(Model):
 
         ### DEFAULT VALUES
         default_settings = {
-            "learning_rate": 1e-2,
+            "learning_rate": 1.0e-3,
+            "final_learning_rate": 1.0e-7,
             "epochs": 50,
             "batch_size": 128,
             "encoding": "decimal",
@@ -41,6 +43,8 @@ class TellTheTimeCNN(Model):
             "actfn_normalization": ["tanh"],    # must be sequence if type is sequence
             "loss": ["mae_angle"],              # must be sequence if type is sequence
             "n_classes": [12],                  # must be sequence if type is sequence
+            "scheduler": True,
+            "decay": 5.0e-4
         }
         if isinstance(settings, dict):
             self.settings = {**default_settings, **settings}
@@ -52,11 +56,16 @@ class TellTheTimeCNN(Model):
         __losses = {"mae_angle": self.mae_angle_loss,
                     "linear_decimal_cyclic": self.linear_cyclic_loss,
                     "mse": "mse",
+                    "mae": "mae",
                     "categorical": 'categorical_crossentropy'}
         __encodings = {"decimal": self.encode_common_decimal,
-                       }
+                       "common_classes": self.encode_common_classes,
+                       "hh_mm_classes": self.encode_hh_mm_classes}
 
         self.learning_rate = self.settings["learning_rate"]
+        self.final_learning_rate = self.settings["final_learning_rate"]
+        self.scheduler = self.settings["scheduler"]
+        self.decay = self.settings["decay"]
         self.epochs = int(self.settings["epochs"])
 
         self.encoding = self.settings["encoding"]
@@ -78,40 +87,26 @@ class TellTheTimeCNN(Model):
         main_stack = [
             Rescaling(1. / 255., input_shape=(150, 150, 1)),
 
-            Conv2D(filters=64, kernel_size=3, strides=1,
-                   activation=hidden_actfn, kernel_initializer="he_normal", padding="VALID"),
-            Conv2D(filters=64, kernel_size=3, strides=1,
-                   activation=hidden_actfn, kernel_initializer="he_normal", padding="VALID"),
-            BatchNormalization(axis=1),
-            MaxPooling2D(pool_size=2),
+            Conv2D(filters=16, kernel_size=5,
+                   activation=hidden_actfn, kernel_initializer="he_normal"),
+            # BatchNormalization(axis=1),
+            MaxPooling2D(pool_size=(2, 2)),
 
-            Conv2D(filters=32, kernel_size=3, strides=1,
-                   activation=hidden_actfn, kernel_initializer="he_normal", padding="VALID"),
-            Conv2D(filters=32, kernel_size=3, strides=1,
-                   activation=hidden_actfn, kernel_initializer="he_normal", padding="VALID"),
-            BatchNormalization(axis=1),
-            MaxPooling2D(pool_size=2),
+            # Conv2D(filters=32, kernel_size=3,
+            #        activation=hidden_actfn, kernel_initializer="he_normal"),
+            Conv2D(filters=32, kernel_size=3,
+                   activation=hidden_actfn, kernel_initializer="he_normal"),
+            # BatchNormalization(axis=1),
+            MaxPooling2D(pool_size=(2, 2)),
 
-            Conv2D(filters=16, kernel_size=5, strides=1,
-                   activation=hidden_actfn, kernel_initializer="he_normal", padding="VALID"),
-            BatchNormalization(axis=1),
-            MaxPooling2D(pool_size=2, strides=1),
+            # Conv2D(filters=64, kernel_size=3,
+            #        activation=hidden_actfn, kernel_initializer="he_normal"),
+            Conv2D(filters=64, kernel_size=3,
+                   activation=hidden_actfn, kernel_initializer="he_normal"),
+            # BatchNormalization(axis=1),
+            MaxPooling2D(pool_size=(2, 2)),
 
-            Conv2D(filters=32, kernel_size=3, strides=1,
-                   activation=hidden_actfn, kernel_initializer="he_normal", padding="VALID"),
-            Conv2D(filters=32, kernel_size=3, strides=1,
-                   activation=hidden_actfn, kernel_initializer="he_normal", padding="VALID"),
-            BatchNormalization(axis=1),
-            MaxPooling2D(pool_size=2),
-
-            Conv2D(filters=64, kernel_size=3, strides=1,
-                   activation=hidden_actfn, kernel_initializer="he_normal", padding="VALID"),
-            Conv2D(filters=64, kernel_size=3, strides=1,
-                   activation=hidden_actfn, kernel_initializer="he_normal", padding="VALID"),
-            BatchNormalization(axis=1),
-            MaxPooling2D(pool_size=2),
-
-            # Dropout(.4),
+            Dropout(.5),
             Flatten(),
         ]
         x = inputs
@@ -119,21 +114,53 @@ class TellTheTimeCNN(Model):
             x = layer(x)
 
         outputs = []
+        output_stacks = []
         losses = []
+        metrics = []
 
         for i, (head, actfn, loss, n_classes) in enumerate(zip(self.type,
                                                                self.actfn_normalization,
                                                                self.loss,
                                                                self.n_classes)):
-            outputs.append(__builders[head](_x=x, classes=n_classes))
+            output, out_stack, out_name = __builders[head](_x=x, classes=n_classes, name=f"{i}")
+            outputs.append(output)
+            output_stacks.append(out_stack)
             losses.append(__losses[loss])
+            metrics.append({out_name: "accuracy"})
+
+
+        # self.stack = []
+        # for layer in main_stack:
+        #     self.stack.append(layer)
+        # for out in output_stacks:
+
 
         # build model
+        # self.inputs = inputs
+        # self.outputs = outputs
+
+        print(outputs)
+        print(losses)
+        print(metrics)
+
         super().__init__(inputs=inputs, outputs=outputs)
-        self.compile(optimizer="adam", loss="mae") #losses)  #
+
+        if self.scheduler:
+            # self.learning_rate_fn = tf.keras.optimizers.schedules.CosineDecayRestarts(
+            #     self.learning_rate, 2000, t_mul=2.0, m_mul=0.5, alpha=self.final_learning_rate,
+            #     name="CosineDecayRestarts")
+            self.learning_rate_fn = tf.keras.optimizers.schedules.ExponentialDecay(self.learning_rate,
+                                                                                   1, 1 - self.decay, staircase=False,
+                                                                                   name="ExponentialDecay")
+        else:
+            self.learning_rate_fn = self.learning_rate
+
+        self.opt = tf.keras.optimizers.Adam(learning_rate=self.learning_rate_fn)
+        self.compile(optimizer=self.opt, metrics=metrics, loss=losses)  #"mae") #
         self.summary()
 
-    def build_regression_head(self, _x, name="reg_output", **kwargs):
+    def build_regression_head(self, _x, name="DEFAULT", **kwargs):
+        name = "reg_output_" + name
         regression_stack = [
             Dense(1024, activation="leaky_relu", kernel_initializer='he_normal'),
             BatchNormalization(),
@@ -147,17 +174,18 @@ class TellTheTimeCNN(Model):
 
         for layer in regression_stack:
             _x = layer(_x)
-        return _x
+        return _x, regression_stack, name
 
-    def build_classification_head(self, _x, classes=12, name="class_output", **kwargs):
+    def build_classification_head(self, _x, classes=12, name="DEFAULT", **kwargs):
+        name = "class_output_" + name
         classification_stack = [
-            Dense(256, activation="relu"),
-            Dense(256, activation="relu"),
+            Dense(64, activation="leaky_relu"),
+            Dense(64, activation="leaky_relu"),
             Dense(units=classes, activation='softmax', name=name)
         ]
         for layer in classification_stack:
             _x = layer(_x)
-        return _x
+        return _x, classification_stack, name
 
     def build_random_preprocessing_stack(self):
         """
@@ -180,21 +208,26 @@ class TellTheTimeCNN(Model):
         ]
         return preprocessing_stack
 
+    def build_graph(self, raw_shape):
+        x = tf.keras.layers.Input(shape=(None, raw_shape),
+                                         ragged=True)
+        return tf.keras.Model(inputs=[x],
+                              outputs=self.call(x))
+
     # ENCODINGS
     @staticmethod
-    def default_encoding(y):
+    def default_encoding(y, **kwargs):
         return y
 
     @staticmethod
-    def encode_decimal(y, norm=1. / 12.):
+    def encode_decimal(y, norm=1. / 12., **kwargs):
         return y * norm
 
     @staticmethod
-    def encode_common_decimal(y):
+    def encode_common_decimal(y, **kwargs):
         return 1 / 12.0 * (y[:, 0] + y[:, 1] / 60.0)
 
-    @staticmethod
-    def encode_common_classes(y, n_classes):
+    def encode_common_classes(self, y, n_classes, **kwargs):
         """
         Class encoding using bankers rounding. Encodes from hh:mm to linear [0, 1) and then to classes
         with labels 0, 1... n_classes - 1 with "increasing" time.
@@ -203,12 +236,13 @@ class TellTheTimeCNN(Model):
         :param n_classes:
         :return:
         """
+
         linear = 1 / 12.0 * (y[:, 0] + y[:, 1] / 60.0)
         linear *= n_classes
-        return tf.round(linear)
+        linear = tf.cast(tf.round(linear), tf.uint8)
+        return tf.one_hot(linear, n_classes)
 
-    @staticmethod
-    def encode_classes(y, n_classes):
+    def encode_classes(self, y, n_classes, **kwargs):
         """
         Class encoding using bankers rounding. Encodes from hh:mm to linear [0, 1) and then to classes
         with labels 0, 1... n_classes - 1 with "increasing" time.
@@ -219,7 +253,19 @@ class TellTheTimeCNN(Model):
         """
         linear = y / tf.math.reduce_max(y)
         linear *= n_classes
-        return tf.round(linear)
+        linear = tf.cast(tf.round(linear), tf.uint8)
+        return tf.one_hot(linear, n_classes)
+
+    def encode_hh_mm_classes(self, y, n_hh_classes, n_mm_classes, **kwargs):
+        hh, mm = tf.unstack(y, axis=1)
+
+        hh = self.encode_classes(hh, n_hh_classes)
+        mm = self.encode_classes(mm, n_mm_classes)
+
+        # y = tf.stack([hh, mm], axis=1)
+        y = [hh, mm]
+
+        return y
 
     # DECODINGS
     @staticmethod
@@ -291,17 +337,25 @@ class TellTheTimeCNN(Model):
         loss = tf.math.minimum((yhat + 1. - y) % 1, (y + 1 - yhat) % 1)
         return tf.square(loss)
 
-    def encode_y(self, y):
-        return self.encoding_fn(y)
+    def encode_y(self, y, **kwargs):
+        return self.encoding_fn(y, **kwargs)
 
-    def train(self, x, y, epochs=4, batchsize=128, shuffle=True, validation_data=None, validation_freq=None):
-        if validation_data is None and validation_freq is not None:
-            validation_freq = int(0.2 * epochs)
+    def _predict_class(self, x):
+        yhat = self.predict(x)
+        yhat = tf.argmax(yhat, axis=-1)
+        return yhat
 
+    def train(self, x, y, epochs=100, batchsize=128, shuffle=True, validation_data=None, validation_freq=None):
         history = self.fit(x, y,
                            epochs=epochs, batch_size=batchsize,
-                           validation_data=validation_data, validation_freq=validation_freq,
-                           shuffle=shuffle,)
+                           validation_data=validation_data, # validation_freq=validation_freq,
+                           shuffle=shuffle,
+                           callbacks=[tf.keras.callbacks.EarlyStopping(patience=10),
+                                      # tf.keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.1,
+                                      #                                      patience=5, min_lr=0.0)
+        ])  # TODO: doesnt work with LrScheduler, see issue https://github.com/tensorflow/tensorflow/issues/41639
+            # which is still unresolved
+        return history
 
     def test(self, x, y):
         eval = self.evaluate(x, y, verbose=1, return_dict=True)
@@ -356,22 +410,45 @@ def get_data(path="./a2_data", test_fraction=0.2):
 if __name__ == '__main__':
     # print("No longer supported, use the supplied jupyter notebook.")
     x_train, base_y_train, x_test, base_y_test = get_data()
-    default_model = TellTheTimeCNN()
 
-    print(base_y_train.shape)
-    print(x_train.shape)
+    settings = {
+        "learning_rate": 1.0e-6,
+        "encoding": "hh_mm_classes",
+        "type": ["classification", "classification"],  # classification, regression (can be sequence)
+        "actfn_normalization": ["tanh", "tanh"],  # must be sequence if type is sequence
+        "loss": ["categorical", "categorical"],  # must be sequence if type is sequence
+        "n_classes": [12, 6],  # must be sequence if type is sequence
+        "decay": 5.0e-2
+    }
 
-    y_train, y_test = default_model.encode_y(base_y_train), default_model.encode_y(base_y_test)
+    default_model = TellTheTimeCNN(settings=settings)
+
+    y_train = default_model.encode_y(base_y_train, n_classes=12, n_hh_classes=12, n_mm_classes=6)
+    y_test = default_model.encode_y(base_y_test, n_classes=12, n_hh_classes=12, n_mm_classes=6)
+
+
+    print(y_train[:5])
+    print(y_test[:5])
 
     try:
         print("Encoding from hh,mm -> f: ", base_y_train.shape, " -> ", y_train.shape)
     except AttributeError:
         print("Encoding from hh,mm -> f: ", base_y_train.shape, " -> ", len(y_train))
 
-
     # import matplotlib
     # matplotlib.use('TkAgg')
     # import matplotlib.pyplot as plt
+    #
+    # fig, (ax1, ax2, ax3) = plt.subplots(1, 3, constrained_layout=True, figsize=(18, 6))
+    # ax1.imshow(x_train[0])
+    # ax1.set_title(f"{y_train[0]}")
+    # ax2.imshow(x_train[23])
+    # ax2.set_title(f"{y_train[23]}")
+    # ax3.imshow(x_train[1699])
+    # ax3.set_title(f"{y_train[1699]}")
+    #
+    # plt.show()
+
     #
     # fig, (ax, ax2, ax3, ax4) = plt.subplots(1, 4, constrained_layout=True, figsize=(24, 6))
     # ax.hist(y_train, bins=100)
@@ -418,13 +495,23 @@ if __name__ == '__main__':
     #
     # raise NotImplementedError
 
-    default_model.train(x_train, y_train)
+    history = default_model.train(x_train, y_train, validation_data=(x_test, y_test))
+
+    print(history)
+    print(history.params)
+
     default_model.test(x_test, y_test)
 
-    print(y_test[:5])
-    print(default_model.predict(x_test[:5]))
+    # print(y_test[:5])
+    # print(default_model.predict(x_test[:5]))
+
+    print(tf.argmax(y_test[:5], axis=-1))
+    print(default_model._predict_class(x_test[:5]))
 
     print("=============")
 
-    print(y_train[:5])
-    print(default_model.predict(x_train[:5]))
+    # print(y_train[:5])
+    # print(default_model.predict(x_train[:5]))
+
+    print(tf.argmax(y_train[:5], axis=-1))
+    print(default_model._predict_class(x_train[:5]))
