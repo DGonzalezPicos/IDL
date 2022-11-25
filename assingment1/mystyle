@@ -1,0 +1,22 @@
+figure.figsize:9.0, 3.0
+font.size:12
+#text.usetex: True
+# font.family: serif
+#font.sans-serif: [Palatino]
+legend.fontsize:12
+xtick.direction:out
+ytick.direction:in
+xtick.major.size:4.0
+xtick.minor.size:3.0
+ytick.major.size:4.0
+ytick.minor.size:3.0
+axes.linewidth:1.2
+axes.grid:False
+ytick.right:True
+xtick.top:False
+scatter.marker: .
+savefig.dpi:       300      # figure dots per inch or 'figure'
+savefig.facecolor: white        # figure face color when saving
+#savefig.edgecolor: auto        # figure edge color when saving
+savefig.format:    pdf         # {png, ps, pdf, svg}
+savefig.bbox:      tight    # {tight, standard}
