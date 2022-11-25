@@ -282,3 +282,9 @@ lectures
 material
 # old projcts
 *.pdf
+
+assingment2/A2-1.pdf
+
+assingment2/a2_data/images.npy
+
+assingment2/a2_data/labels.npy
